@@ -1,0 +1,68 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest tests/unit/ -v --tb=short
+
+      - name: Lint with ruff
+        run: python -m ruff check .
+
+  build:
+    name: Build Docker Image
+    needs: test
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract version
+        id: version
+        run: |
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+          VERSION=${TAG#v}
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: Dockerfile
+          push: false
+          tags: |
+            eventbus-server:${{ steps.version.outputs.tag }}
+            eventbus-server:${{ steps.version.outputs.version }}
+            eventbus-server:latest
+
+      - name: Display built image
+        run: docker images eventbus-server
