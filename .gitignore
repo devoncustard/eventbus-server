@@ -1,0 +1,20 @@
+# Generated
+events.db
+site/
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/

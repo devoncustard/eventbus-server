@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventbus
+  labels:
+    app: eventbus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eventbus
+  template:
+    metadata:
+      labels:
+        app: eventbus
+    spec:
+      containers:
+        - name: eventbus
+          image: eventbus:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8765
+              name: http
+          env:
+            - name: DB_PATH
+              value: "/data/events.db"
+            - name: MAX_EVENTS
+              value: "5000"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8765"
+          volumeMounts:
+            - name: eventbus-data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8765
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+      volumes:
+        - name: eventbus-data
+          emptyDir: {}

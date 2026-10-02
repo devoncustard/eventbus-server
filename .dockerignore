@@ -1,0 +1,15 @@
+# .dockerignore
+__pycache__
+*.pyc
+*.pyo
+.venv
+*.egg-info
+dist
+build
+events.db
+events.db-shm
+events.db-wal
+src/logs
+.git
+.github
+tests

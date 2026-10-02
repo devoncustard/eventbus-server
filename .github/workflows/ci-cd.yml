@@ -1,0 +1,99 @@
+name: EventBus CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'release/*'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  REGISTRY: harbor.example.com
+  IMAGE_NAME: eventsbus
+  NAMESPACE: eventbus-system
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest tests/unit/ -v --tb=short
+
+      - name: Lint with ruff
+        run: python -m ruff check .
+
+  build-and-push:
+    name: Build & Push Image
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Extract version
+        id: version
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          VERSION=${TAG#v}
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: eventbus/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update Kustomize image tag in production overlay
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          sed -i "s/newTag: .*/newTag: ${TAG}/" eventbus/k8s/overlays/production/kustomization.yaml
+
+      - name: Commit Kustomize changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          default_branch: main
+          message: "chore(deploy): update eventsbus to ${{ steps.version.outputs.tag }}"
+          add: "eventbus/k8s/overlays/production/kustomization.yaml"
+          committer_name: GitHub Actions
+          committer_email: actions@github.com
